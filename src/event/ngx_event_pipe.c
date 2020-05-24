@@ -136,6 +136,7 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, p->log, 0,
                    "pipe read upstream: %d", p->upstream->read->ready);
 
+    // ここも気になる, とはいえ上のメッセージが出てないので無視かな
     for ( ;; ) {
 
         if (p->upstream_eof || p->upstream_error || p->upstream_done) {

@@ -1303,6 +1303,9 @@ ngx_http_update_location_config(ngx_http_request_t *r)
         ngx_set_connection_log(r->connection, clcf->error_log);
     }
 
+    // ここでsendfileの設定をしている, これはconfigでsendfileがonになっていないとtrueにならなさそう
+    // defaultはoff
+    // http://nginx.org/en/docs/http/ngx_http_core_module.html#sendfile
     if ((ngx_io.flags & NGX_IO_SENDFILE) && clcf->sendfile) {
         r->connection->sendfile = 1;
 
@@ -1791,6 +1794,8 @@ ngx_http_send_response(ngx_http_request_t *r, ngx_uint_t status,
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    // ここでoutのbufferを作成する, r == r->mainの場合はlast_bufになる
+    // rについて要調査
     b->pos = val.data;
     b->last = val.data + val.len;
     b->memory = val.len ? 1 : 0;
@@ -1832,6 +1837,8 @@ ngx_http_send_header(ngx_http_request_t *r)
 }
 
 
+// READING::
+// from ngx_http_static_handler
 ngx_int_t
 ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -1843,6 +1850,7 @@ ngx_http_output_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, c->log, 0,
                    "http output filter \"%V?%V\"", &r->uri, &r->args);
 
+    // 今回のケースではngx_http_top_body_filterがhttp_copy_filter
     rc = ngx_http_top_body_filter(r, in);
 
     if (rc == NGX_ERROR) {

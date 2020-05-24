@@ -17,6 +17,8 @@ static ngx_int_t ngx_event_connect_set_transparent(ngx_peer_connection_t *pc,
 #endif
 
 
+// READING::
+// ここもsendfileに関わっている
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)
 {
@@ -163,6 +165,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         c->recv_chain = ngx_recv_chain;
         c->send_chain = ngx_send_chain;
 
+        // MEMO: TCP接続で来た場合はsendfileが1になる
         c->sendfile = 1;
 
         if (pc->sockaddr->sa_family == AF_UNIX) {

@@ -45,6 +45,8 @@ ngx_module_t  ngx_http_static_module = {
 };
 
 
+// READING::
+// from ?
 static ngx_int_t
 ngx_http_static_handler(ngx_http_request_t *r)
 {
@@ -250,6 +252,7 @@ ngx_http_static_handler(ngx_http_request_t *r)
         return rc;
     }
 
+    // ここでin_fileが1になっているっぽい
     b->file_pos = 0;
     b->file_last = of.size;
 
@@ -260,6 +263,7 @@ ngx_http_static_handler(ngx_http_request_t *r)
     b->file->fd = of.fd;
     b->file->name = path;
     b->file->log = log;
+    // directioも基本0っぽい
     b->file->directio = of.is_directio;
 
     out.buf = b;

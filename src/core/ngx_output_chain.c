@@ -41,7 +41,9 @@ static ngx_int_t ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx,
     off_t bsize);
 static ngx_int_t ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx);
 
-
+// READING::
+// from ngx_http_copy_filter
+// ctx->inがNULLだとcopy_filterがbufferedフラグを折る, 逆の場合はbufferedフラグが立つ
 ngx_int_t
 ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 {
@@ -49,6 +51,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
     ngx_int_t     rc, last;
     ngx_chain_t  *cl, *out, **last_out;
 
+    // 少なくとも初回アクセスはここに入る
     if (ctx->in == NULL && ctx->busy == NULL
 #if (NGX_HAVE_FILE_AIO || NGX_THREADS)
         && !ctx->aio
@@ -61,15 +64,18 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
          * that does not require the copy
          */
 
+        // inはfileが指定されているbuffer
+        // inは指定されているのでこれは無視
         if (in == NULL) {
             return ctx->output_filter(ctx->filter_ctx, in);
         }
 
+        // in->nextはNULL, static_moduleでnextがNULLになっている
         if (in->next == NULL
 #if (NGX_SENDFILE_LIMIT)
             && !(in->buf->in_file && in->buf->file_last > NGX_SENDFILE_LIMIT)
 #endif
-            && ngx_output_chain_as_is(ctx, in->buf))
+            && ngx_output_chain_as_is(ctx, in->buf))  // as_isではないのでここには入らない
         {
             return ctx->output_filter(ctx->filter_ctx, in);
         }
@@ -78,6 +84,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
     /* add the incoming buf to the chain ctx->in */
 
     if (in) {
+        // chainの末尾にinを追加する
         if (ngx_output_chain_add_copy(ctx->pool, &ctx->in, in) == NGX_ERROR) {
             return NGX_ERROR;
         }
@@ -102,8 +109,8 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
              * and there are the free output bufs to copy in
              */
 
+            // ファイルサイズが返っている
             bsize = ngx_buf_size(ctx->in->buf);
-
             if (bsize == 0 && !ngx_buf_special(ctx->in->buf)) {
 
                 ngx_log_error(NGX_LOG_ALERT, ctx->pool->log, 0,
@@ -146,6 +153,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 return NGX_ERROR;
             }
 
+            // ctx->in->bufはfileなのでas_isではない
             if (ngx_output_chain_as_is(ctx, ctx->in->buf)) {
 
                 /* move the chain link to the output chain */
@@ -160,6 +168,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 continue;
             }
 
+            // ctx->bufは確保してないのでここに入る
             if (ctx->buf == NULL) {
 
                 rc = ngx_output_chain_align_file_buf(ctx, bsize);
@@ -168,8 +177,9 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                     return NGX_ERROR;
                 }
 
+                // NGX_DECLINEDなのでここに入る
                 if (rc != NGX_OK) {
-
+                    // 初回はfree bufferはない
                     if (ctx->free) {
 
                         /* get the free buf */
@@ -180,16 +190,18 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 
                         ngx_free_chain(ctx->pool, cl);
 
+                        // ctx->allocatedは0, ctx->bufs.numはdefaultだと2 http://nginx.org/en/docs/http/ngx_http_core_module.html#output_buffers
                     } else if (out || ctx->allocated == ctx->bufs.num) {
-
+                        // 2回目に来たときはoutが設定されているのでbreakする
                         break;
-
+                        // これでbufferを追加して, allocatedを更新している, ctx->bufが設定される
                     } else if (ngx_output_chain_get_buf(ctx, bsize) != NGX_OK) {
                         return NGX_ERROR;
                     }
                 }
             }
 
+            // bufにinを読み込む
             rc = ngx_output_chain_copy_buf(ctx);
 
             if (rc == NGX_ERROR) {
@@ -205,7 +217,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             }
 
             /* delete the completed buf from the ctx->in chain */
-
+            // 現在のinput bufferを読み込みきった場合は次へ
             if (ngx_buf_size(ctx->in->buf) == 0) {
                 ctx->in = ctx->in->next;
             }
@@ -215,10 +227,15 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
                 return NGX_ERROR;
             }
 
+            // 要素が一つしかないchain_linkを作る
             cl->buf = ctx->buf;
             cl->next = NULL;
+
+            // ここでoutが更新される
             *last_out = cl;
             last_out = &cl->next;
+
+            // ctx->bufをNULLにする
             ctx->buf = NULL;
         }
 
@@ -231,6 +248,7 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
             return last;
         }
 
+        // sxg-moduleを実行
         last = ctx->output_filter(ctx->filter_ctx, out);
 
         if (last == NGX_ERROR || last == NGX_DONE) {
@@ -244,11 +262,15 @@ ngx_output_chain(ngx_output_chain_ctx_t *ctx, ngx_chain_t *in)
 }
 
 
+// READING::
+// from ngx_output_chain 
+// 今回は0を返す
 static ngx_inline ngx_int_t
 ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
 {
     ngx_uint_t  sendfile;
 
+    // in_fileなのでspecialではない
     if (ngx_buf_special(buf)) {
         return 1;
     }
@@ -259,11 +281,12 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
         buf->file->thread_ctx = ctx->filter_ctx;
     }
 #endif
-
+    // in_fileではあるけどdirectioではない
     if (buf->in_file && buf->file->directio) {
         return 0;
     }
 
+    // sendfileではない
     sendfile = ctx->sendfile;
 
 #if (NGX_SENDFILE_LIMIT)
@@ -273,9 +296,8 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
     }
 
 #endif
-
+    // 今回はsendfileが1
     if (!sendfile) {
-
         if (!ngx_buf_in_memory(buf)) {
             return 0;
         }
@@ -288,7 +310,7 @@ ngx_output_chain_as_is(ngx_output_chain_ctx_t *ctx, ngx_buf_t *buf)
         (void) ngx_output_chain_aio_setup(ctx, buf->file);
     }
 #endif
-
+    // sxgは絶対にhttpsなのでneed_in_memoryになる (ngx_http_request)
     if (ctx->need_in_memory && !ngx_buf_in_memory(buf)) {
         return 0;
     }
@@ -323,6 +345,9 @@ ngx_output_chain_aio_setup(ngx_output_chain_ctx_t *ctx, ngx_file_t *file)
 #endif
 
 
+// READING::
+// from ngx_output_chain 
+// chainの末尾にinを追加する
 static ngx_int_t
 ngx_output_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain,
     ngx_chain_t *in)
@@ -392,6 +417,9 @@ ngx_output_chain_add_copy(ngx_pool_t *pool, ngx_chain_t **chain,
 }
 
 
+// READING::
+// from ngx_output_chain
+// directioが0なのでNGX_DECLINED
 static ngx_int_t
 ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 {
@@ -400,6 +428,7 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 
     in = ctx->in->buf;
 
+    // directioが0なのでNGX_DECLINED
     if (in->file == NULL || !in->file->directio) {
         return NGX_DECLINED;
     }
@@ -442,6 +471,8 @@ ngx_output_chain_align_file_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 }
 
 
+// READING::
+// from ngx_output_chain
 static ngx_int_t
 ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
 {
@@ -450,11 +481,12 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     ngx_uint_t   recycled;
 
     in = ctx->in->buf;
-    size = ctx->bufs.size;
+    size = ctx->bufs.size; // bufferサイズ, defaultだと32KB http://nginx.org/en/docs/http/ngx_http_core_module.html#output_buffers
     recycled = 1;
 
+    // staticファイルの場合は1 (ngx_http_static_moduleを参照)
     if (in->last_in_chain) {
-
+        // ファイルサイズがbufferサイズより小さい場合
         if (bsize < (off_t) size) {
 
             /*
@@ -466,7 +498,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
             recycled = 0;
 
         } else if (!ctx->directio
-                   && ctx->bufs.num == 1
+                   && ctx->bufs.num == 1 // これはdefaultだと2なので気にしなくて良い
                    && (bsize < (off_t) (size + size / 4)))
         {
             /*
@@ -485,6 +517,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
         return NGX_ERROR;
     }
 
+    // directioは0なので入らない
     if (ctx->directio) {
 
         /*
@@ -504,6 +537,7 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
         }
     }
 
+    // poolからbufferを取得, かつtemporary, recycledが1
     b->pos = b->start;
     b->last = b->start;
     b->end = b->last + size;
@@ -511,13 +545,15 @@ ngx_output_chain_get_buf(ngx_output_chain_ctx_t *ctx, off_t bsize)
     b->tag = ctx->tag;
     b->recycled = recycled;
 
+    // allocatedが追加される
     ctx->buf = b;
     ctx->allocated++;
 
     return NGX_OK;
 }
 
-
+// READING::
+// from ngx_output_chain 
 static ngx_int_t
 ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 {
@@ -533,7 +569,8 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
     size = ngx_min(size, dst->end - dst->pos);
 
     sendfile = ctx->sendfile && !ctx->directio;
-
+    // chain_ctxがsendfileかつdirectioじゃない場合
+    // sendfileが1だとdstがin_fileになるっぽい
 #if (NGX_SENDFILE_LIMIT)
 
     if (src->in_file && src->file_pos >= NGX_SENDFILE_LIMIT) {
@@ -542,6 +579,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
 
 #endif
 
+    // srcはin_fileなのでin_memoryではない
     if (ngx_buf_in_memory(src)) {
         ngx_memcpy(dst->pos, src->pos, (size_t) size);
         src->pos += (size_t) size;
@@ -612,6 +650,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         } else
 #endif
         {
+            // ここでfile readした結果がbufに読み込まれる
             n = ngx_read_file(src->file, dst->pos, (size_t) size,
                               src->file_pos);
         }
@@ -639,7 +678,7 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
         if (n == NGX_ERROR) {
             return (ngx_int_t) n;
         }
-
+        // buffer size分読み込めなければエラーになる
         if (n != size) {
             ngx_log_error(NGX_LOG_ALERT, ctx->pool->log, 0,
                           ngx_read_file_n " read only %z of %O from \"%s\"",
@@ -647,8 +686,10 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
             return NGX_ERROR;
         }
 
+        // bufferの末尾が更新される
         dst->last += n;
 
+        // sendfileっぽい
         if (sendfile) {
             dst->in_file = 1;
             dst->file = src->file;
@@ -659,9 +700,11 @@ ngx_output_chain_copy_buf(ngx_output_chain_ctx_t *ctx)
             dst->in_file = 0;
         }
 
+        // ファイルが読み込んだ分進む
         src->file_pos += n;
 
         if (src->file_pos == src->file_last) {
+            // 最後まで読み込んだ場合はflush, src->last_buf=1, last_in_chain=1 (ngx_http_static_module)
             dst->flush = src->flush;
             dst->last_buf = src->last_buf;
             dst->last_in_chain = src->last_in_chain;

@@ -181,28 +181,33 @@ ngx_chain_get_free_buf(ngx_pool_t *p, ngx_chain_t **free)
 }
 
 
+// READING::
+// from ngx_output_chain
 void
 ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
     ngx_chain_t **out, ngx_buf_tag_t tag)
 {
     ngx_chain_t  *cl;
-
+    // outは基本的にNULLじゃない
     if (*out) {
+        // busyの末尾にoutを追加する
         if (*busy == NULL) {
             *busy = *out;
 
         } else {
             for (cl = *busy; cl->next; cl = cl->next) { /* void */ }
-
             cl->next = *out;
         }
 
         *out = NULL;
     }
 
+    // busyの先頭から走査する
+    // 初めてconsumeされていないbufを見つけたらそこで中止する
+    // 同一のtagの場合はリセットしてfreeの先頭に追加する
+    // tagが違う場合はpoolに返却する
     while (*busy) {
         cl = *busy;
-
         if (ngx_buf_size(cl->buf) != 0) {
             break;
         }

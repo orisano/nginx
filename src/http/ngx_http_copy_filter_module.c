@@ -82,7 +82,9 @@ ngx_module_t  ngx_http_copy_filter_module = {
 
 static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
 
-
+// READING::
+// from ngx_http_output_filter
+// ngx_http_top_body_filterに設定されている
 static ngx_int_t
 ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 {
@@ -99,6 +101,7 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
     ctx = ngx_http_get_module_ctx(r, ngx_http_copy_filter_module);
 
+    // ctxがなければ作る, 一度のリクエストで複数回呼ばれる可能性があるやつのマナー的なやつっぽい
     if (ctx == NULL) {
         ctx = ngx_pcalloc(r->pool, sizeof(ngx_output_chain_ctx_t));
         if (ctx == NULL) {
@@ -110,9 +113,15 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
         conf = ngx_http_get_module_loc_conf(r, ngx_http_copy_filter_module);
         clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
 
+        // connectionのsendfileがoutput_chain_ctx_tのsendfileになる
+        // copy_filterだとdirectioは設定されない
+
         ctx->sendfile = c->sendfile;
+
+        // このへんがどうなっているかわからない
         ctx->need_in_memory = r->main_filter_need_in_memory
                               || r->filter_need_in_memory;
+        // このへんがどうなっているかわからない
         ctx->need_in_temp = r->filter_need_temporary;
 
         ctx->alignment = clcf->directio_alignment;
@@ -121,8 +130,11 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
         ctx->bufs = conf->bufs;
         ctx->tag = (ngx_buf_tag_t) &ngx_http_copy_filter_module;
 
+        // ngx_http_next_body_filterがsxg-moduleになっている
         ctx->output_filter = (ngx_output_chain_filter_pt)
                                   ngx_http_next_body_filter;
+
+        // requestが入っている
         ctx->filter_ctx = r;
 
 #if (NGX_HAVE_FILE_AIO)
@@ -139,7 +151,8 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
             ctx->thread_handler = ngx_http_copy_thread_handler;
         }
 #endif
-
+        // r->request_outputは1になってそう
+        // in->bufはfileなのでngx_buf_in_memoryは0なのでファイルサイズ
         if (in && in->buf && ngx_buf_size(in->buf)) {
             r->request_output = 1;
         }
@@ -150,7 +163,6 @@ ngx_http_copy_filter(ngx_http_request_t *r, ngx_chain_t *in)
 #endif
 
     rc = ngx_output_chain(ctx, in);
-
     if (ctx->in == NULL) {
         r->buffered &= ~NGX_HTTP_COPY_BUFFERED;
 
