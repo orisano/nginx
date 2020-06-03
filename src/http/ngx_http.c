@@ -677,7 +677,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_uint_t                   r;
     ngx_queue_t                 *regex;
 #endif
-
+    // ring queue になっている
     locations = pclcf->locations;
 
     if (locations == NULL) {
@@ -706,7 +706,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         }
 
 #if (NGX_PCRE)
-
+        // regexの先頭を取得する, 個数を数える
         if (clcf->regex) {
             r++;
 
@@ -718,7 +718,7 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         }
 
 #endif
-
+        // namedの先頭を取得する, 個数を数える
         if (clcf->named) {
             n++;
 
@@ -734,7 +734,10 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         }
     }
 
+    // noname が発見された場合, q が noname の head
     if (q != ngx_queue_sentinel(locations)) {
+        // locations -> qp
+        // tail -> q ---->
         ngx_queue_split(locations, q, &tail);
     }
 
@@ -757,7 +760,8 @@ ngx_http_init_locations(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         }
 
         *clcfp = NULL;
-
+        // locations --> named_p
+        // tail -> named ------>
         ngx_queue_split(locations, named, &tail);
     }
 
@@ -824,10 +828,12 @@ ngx_http_init_static_location_trees(ngx_conf_t *cf,
         }
     }
 
+    // exact と inclusive が最初だと別れているので exact 側に inclusive を融合する
     if (ngx_http_join_exact_locations(cf, locations) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    // location->list に階層化された状態を作る
     ngx_http_create_locations_list(locations, ngx_queue_head(locations));
 
     pclcf->static_locations = ngx_http_create_locations_tree(cf, locations, 0);
@@ -1000,6 +1006,7 @@ ngx_http_join_exact_locations(ngx_conf_t *cf, ngx_queue_t *locations)
 }
 
 
+// inclusive な location を内包する location の子 list に追加していく
 static void
 ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
 {
@@ -1022,12 +1029,14 @@ ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
     len = lq->name->len;
     name = lq->name->data;
 
+    // x: q と prefix が一致しない初めてのlocation
     for (x = ngx_queue_next(q);
          x != ngx_queue_sentinel(locations);
          x = ngx_queue_next(x))
     {
         lx = (ngx_http_location_queue_t *) x;
 
+        // q と prefix が一致している間回るループ
         if (len > lx->name->len
             || ngx_filename_cmp(name, lx->name->data, len) != 0)
         {
@@ -1035,26 +1044,45 @@ ngx_http_create_locations_list(ngx_queue_t *locations, ngx_queue_t *q)
         }
     }
 
+    // ここで nq に更新されている!
     q = ngx_queue_next(q);
 
+    // q と　prefix が一致している location がなかったとき, そこから再度 locations_list を生成する
     if (q == x) {
         ngx_http_create_locations_list(locations, x);
         return;
     }
 
+    // h ------> q -> nq ------->
+    //
+    // h ------> q
+    // n -> nq ------>
+    // locations が q が末尾の queue に更新される
     ngx_queue_split(locations, q, &tail);
+
+    // list -------->
+    // n -> nq ------>
+    //
+    // list --------> nq ------>
+    // list の末尾に未処理の location をすべて追加する
     ngx_queue_add(&lq->list, &tail);
 
+    // 残りがすべて同一の prefix だったときは lq->list を再帰的に処理するだけで処理が終了する
     if (x == ngx_queue_sentinel(locations)) {
         ngx_http_create_locations_list(&lq->list, ngx_queue_head(&lq->list));
         return;
     }
 
+    // lq->list が x を末尾(含まない)状態にする -> lq->list は q と等しい prefix を持つ location の queue になる
     ngx_queue_split(&lq->list, x, &tail);
+
+    // locations に x 以降を追加し直す. q が末尾の状態に更新されているので
     ngx_queue_add(locations, &tail);
 
+    // 再帰的に同一の prefix を持つ queue に対して処理を行う
     ngx_http_create_locations_list(&lq->list, ngx_queue_head(&lq->list));
 
+    // 残りの部分に対して list の構築を行う
     ngx_http_create_locations_list(locations, x);
 }
 
@@ -1096,6 +1124,8 @@ ngx_http_create_locations_tree(ngx_conf_t *cf, ngx_queue_t *locations,
     node->len = (u_char) len;
     ngx_memcpy(node->name, &lq->name->data[prefix], len);
 
+    // locations --> qp
+    // tail -> q ----->
     ngx_queue_split(locations, q, &tail);
 
     if (ngx_queue_empty(locations)) {

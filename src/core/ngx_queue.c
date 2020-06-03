@@ -27,6 +27,7 @@ ngx_queue_middle(ngx_queue_t *queue)
 
     next = ngx_queue_head(queue);
 
+    // 同一位置から始めて middle は 1, next は 2 づつ進めて next が末尾に到達したときの middle が中間になる
     for ( ;; ) {
         middle = ngx_queue_next(middle);
 

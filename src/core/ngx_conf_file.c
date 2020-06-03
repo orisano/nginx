@@ -153,7 +153,7 @@ ngx_conf_add_dump(ngx_conf_t *cf, ngx_str_t *filename)
     return NGX_OK;
 }
 
-
+// handler を呼んでいる
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 {
@@ -352,6 +352,7 @@ done:
 }
 
 
+// ここで module の commands を処理している
 static ngx_int_t
 ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 {

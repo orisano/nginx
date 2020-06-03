@@ -18,6 +18,7 @@ static ngx_int_t ngx_event_connect_set_transparent(ngx_peer_connection_t *pc,
 
 
 // READING::
+// from upstream
 // ここもsendfileに関わっている
 ngx_int_t
 ngx_event_connect_peer(ngx_peer_connection_t *pc)

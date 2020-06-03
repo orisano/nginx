@@ -83,7 +83,8 @@ struct ngx_queue_s {
 
 #endif
 
-
+// qp <=> h
+// hp <=> n <=> q 
 #define ngx_queue_split(h, q, n)                                              \
     (n)->prev = (h)->prev;                                                    \
     (n)->prev->next = n;                                                      \
@@ -93,6 +94,8 @@ struct ngx_queue_s {
     (q)->prev = n;
 
 
+// np <=> h
+// hp <=> nn
 #define ngx_queue_add(h, n)                                                   \
     (h)->prev->next = (n)->next;                                              \
     (n)->next->prev = (h)->prev;                                              \

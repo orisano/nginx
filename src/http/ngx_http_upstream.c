@@ -1526,6 +1526,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
     u->state->connect_time = (ngx_msec_t) -1;
     u->state->header_time = (ngx_msec_t) -1;
 
+    // ngx_event_connect_peerがTCPで接続するとsendfileが1になる
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -3856,6 +3857,8 @@ ngx_http_upstream_output_filter(void *data, ngx_chain_t *chain)
 }
 
 
+// READING::
+// ngx_event_pipeを呼んでいる
 static void
 ngx_http_upstream_process_downstream(ngx_http_request_t *r)
 {

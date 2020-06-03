@@ -19,6 +19,8 @@ static ngx_inline void ngx_event_pipe_remove_shadow_links(ngx_buf_t *buf);
 static ngx_int_t ngx_event_pipe_drain_chains(ngx_event_pipe_t *p);
 
 
+// READING::
+// ngx_event_pipe_write_to_downstreamを呼び出している
 ngx_int_t
 ngx_event_pipe(ngx_event_pipe_t *p, ngx_int_t do_write)
 {
@@ -383,8 +385,6 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
         }
     }
 
-#if (NGX_DEBUG)
-
     for (cl = p->busy; cl; cl = cl->next) {
         ngx_log_debug8(NGX_LOG_DEBUG_EVENT, p->log, 0,
                        "pipe buf busy s:%d t:%d f:%d "
@@ -440,7 +440,6 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, p->log, 0,
                    "pipe length: %O", p->length);
 
-#endif
 
     if (p->free_raw_bufs && p->length != -1) {
         cl = p->free_raw_bufs;
@@ -499,6 +498,8 @@ ngx_event_pipe_read_upstream(ngx_event_pipe_t *p)
 }
 
 
+// READING::
+// pipe write busyが出ている
 static ngx_int_t
 ngx_event_pipe_write_to_downstream(ngx_event_pipe_t *p)
 {
